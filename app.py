@@ -1568,7 +1568,234 @@ def internal_error(error):
     db.session.rollback()
     return render_template('500.html'), 500
 
-if __name__ == '__main__':
+# Khởi tạo database khi import module
+def create_app():
     init_db()
+    return app
+
+# Khởi tạo database ngay khi module được import
+try:
+    with app.app_context():
+        db.create_all()
+        
+        # Kiểm tra xem đã có dữ liệu chưa
+        if User.query.first() is None:
+            # Thêm màu sắc
+            colors = [
+                Color(name='Đen', hex_code='#000000'),
+                Color(name='Trắng', hex_code='#FFFFFF'),
+                Color(name='Xanh dương', hex_code='#0000FF'),
+                Color(name='Đỏ', hex_code='#FF0000'),
+                Color(name='Xanh lá', hex_code='#008000'),
+                Color(name='Vàng', hex_code='#FFFF00'),
+                Color(name='Hồng', hex_code='#FFC0CB'),
+                Color(name='Nâu', hex_code='#A52A2A'),
+                Color(name='Xám', hex_code='#808080')
+            ]
+            for color in colors:
+                db.session.add(color)
+            
+            # Thêm kích thước
+            sizes = [
+                Size(name='XS', description='Extra Small'),
+                Size(name='S', description='Small'),
+                Size(name='M', description='Medium'),
+                Size(name='L', description='Large'),
+                Size(name='XL', description='Extra Large'),
+                Size(name='XXL', description='Double Extra Large'),
+                Size(name='28', description='Eo 28 inch'),
+                Size(name='29', description='Eo 29 inch'),
+                Size(name='30', description='Eo 30 inch'),
+                Size(name='31', description='Eo 31 inch'),
+                Size(name='32', description='Eo 32 inch'),
+                Size(name='33', description='Eo 33 inch')
+            ]
+            for size in sizes:
+                db.session.add(size)
+            
+            # Thêm danh mục
+            categories = [
+                Category(name='Áo Nam', description='Các loại áo dành cho nam giới', image_url='/static/images/ao-nam.jpg'),
+                Category(name='Áo Nữ', description='Các loại áo dành cho nữ giới', image_url='/static/images/ao-nu.jpg'),
+                Category(name='Quần Nam', description='Các loại quần dành cho nam giới', image_url='/static/images/quan-nam.jpg'),
+                Category(name='Quần Nữ', description='Các loại quần dành cho nữ giới', image_url='/static/images/quan-nu.jpg'),
+                Category(name='Váy Đầm', description='Các loại váy đầm nữ', image_url='/static/images/vay-dam.jpg'),
+                Category(name='Phụ Kiện', description='Các loại phụ kiện thời trang', image_url='/static/images/phu-kien.jpg')
+            ]
+            for category in categories:
+                db.session.add(category)
+            
+            db.session.commit()
+            
+            # Thêm sản phẩm
+            products = [
+                Product(name='Áo Thun Nam Đen', description='Áo thun nam màu đen, chất liệu cotton thoáng mát', base_price=299000, category_id=1, image_url='/static/images/ao-thun-nam-den.jpg'),
+                Product(name='Áo Sơ Mi Nam Trắng', description='Áo sơ mi nam màu trắng, phù hợp đi làm', base_price=499000, category_id=1, image_url='/static/images/ao-so-mi-nam-trang.jpg'),
+                Product(name='Áo Thun Nữ Hồng', description='Áo thun nữ màu hồng, thiết kế trẻ trung', base_price=259000, category_id=2, image_url='/static/images/ao-thun-nu-hong.jpg'),
+                Product(name='Áo Sơ Mi Nữ Trắng', description='Áo sơ mi nữ màu trắng, thanh lịch', base_price=459000, category_id=2, image_url='/static/images/ao-so-mi-nu-trang.jpg'),
+                Product(name='Áo Khoác Nữ Nhẹ', description='Áo khoác nữ nhẹ, phù hợp mùa thu', base_price=699000, category_id=2, image_url='/static/images/ao-khoac-nu-nhe.jpg'),
+                Product(name='Quần Jean Nam Xanh', description='Quần jean nam màu xanh, form slim fit', base_price=599000, category_id=3, image_url='/static/images/quan-jean-nam-xanh.jpg'),
+                Product(name='Quần Kaki Nam Nâu', description='Quần kaki nam màu nâu, phong cách lịch lãm', base_price=549000, category_id=3, image_url='/static/images/quan-kaki-nam-nau.jpg'),
+                Product(name='Quần Jean Nữ Xanh Nhạt', description='Quần jean nữ màu xanh nhạt, form skinny', base_price=559000, category_id=4, image_url='/static/images/quan-jean-nu-xanh-nhat.jpg'),
+                Product(name='Váy Đầm Suông Đen', description='Váy đầm suông màu đen, thanh lịch', base_price=799000, category_id=5, image_url='/static/images/vay-dam-suong-den.jpg')
+            ]
+            for product in products:
+                db.session.add(product)
+            
+            db.session.commit()
+            
+            # Thêm biến thể sản phẩm
+            variants = [
+                # Áo Thun Nam Đen
+                ProductVariant(product_id=1, color_id=1, size_id=2, price=299000, stock_quantity=50, sku='ATN-DEN-S'),
+                ProductVariant(product_id=1, color_id=1, size_id=3, price=299000, stock_quantity=45, sku='ATN-DEN-M'),
+                ProductVariant(product_id=1, color_id=1, size_id=4, price=299000, stock_quantity=40, sku='ATN-DEN-L'),
+                ProductVariant(product_id=1, color_id=1, size_id=5, price=299000, stock_quantity=35, sku='ATN-DEN-XL'),
+                # Áo Sơ Mi Nam Trắng
+                ProductVariant(product_id=2, color_id=2, size_id=2, price=499000, stock_quantity=30, sku='ASM-TRA-S'),
+                ProductVariant(product_id=2, color_id=2, size_id=3, price=499000, stock_quantity=25, sku='ASM-TRA-M'),
+                ProductVariant(product_id=2, color_id=2, size_id=4, price=499000, stock_quantity=20, sku='ASM-TRA-L'),
+                ProductVariant(product_id=2, color_id=2, size_id=5, price=499000, stock_quantity=15, sku='ASM-TRA-XL'),
+                # Áo Thun Nữ Hồng
+                ProductVariant(product_id=3, color_id=7, size_id=1, price=259000, stock_quantity=40, sku='ATN-HON-XS'),
+                ProductVariant(product_id=3, color_id=7, size_id=2, price=259000, stock_quantity=35, sku='ATN-HON-S'),
+                ProductVariant(product_id=3, color_id=7, size_id=3, price=259000, stock_quantity=30, sku='ATN-HON-M'),
+                ProductVariant(product_id=3, color_id=7, size_id=4, price=259000, stock_quantity=25, sku='ATN-HON-L'),
+                # Áo Sơ Mi Nữ Trắng
+                ProductVariant(product_id=4, color_id=2, size_id=1, price=459000, stock_quantity=25, sku='ASN-TRA-XS'),
+                ProductVariant(product_id=4, color_id=2, size_id=2, price=459000, stock_quantity=20, sku='ASN-TRA-S'),
+                ProductVariant(product_id=4, color_id=2, size_id=3, price=459000, stock_quantity=18, sku='ASN-TRA-M'),
+                ProductVariant(product_id=4, color_id=2, size_id=4, price=459000, stock_quantity=15, sku='ASN-TRA-L'),
+                # Áo Khoác Nữ Nhẹ
+                ProductVariant(product_id=5, color_id=1, size_id=2, price=699000, stock_quantity=20, sku='AKN-DEN-S'),
+                ProductVariant(product_id=5, color_id=1, size_id=3, price=699000, stock_quantity=18, sku='AKN-DEN-M'),
+                ProductVariant(product_id=5, color_id=1, size_id=4, price=699000, stock_quantity=15, sku='AKN-DEN-L'),
+                ProductVariant(product_id=5, color_id=9, size_id=2, price=699000, stock_quantity=12, sku='AKN-XAM-S'),
+                ProductVariant(product_id=5, color_id=9, size_id=3, price=699000, stock_quantity=10, sku='AKN-XAM-M'),
+                # Quần Jean Nam Xanh
+                ProductVariant(product_id=6, color_id=3, size_id=7, price=599000, stock_quantity=25, sku='QJN-XAN-28'),
+                ProductVariant(product_id=6, color_id=3, size_id=8, price=599000, stock_quantity=22, sku='QJN-XAN-29'),
+                ProductVariant(product_id=6, color_id=3, size_id=9, price=599000, stock_quantity=20, sku='QJN-XAN-30'),
+                ProductVariant(product_id=6, color_id=3, size_id=10, price=599000, stock_quantity=18, sku='QJN-XAN-31'),
+                ProductVariant(product_id=6, color_id=3, size_id=11, price=599000, stock_quantity=15, sku='QJN-XAN-32'),
+                # Quần Kaki Nam Nâu
+                ProductVariant(product_id=7, color_id=8, size_id=7, price=549000, stock_quantity=20, sku='QKN-NAU-28'),
+                ProductVariant(product_id=7, color_id=8, size_id=8, price=549000, stock_quantity=18, sku='QKN-NAU-29'),
+                ProductVariant(product_id=7, color_id=8, size_id=9, price=549000, stock_quantity=16, sku='QKN-NAU-30'),
+                ProductVariant(product_id=7, color_id=8, size_id=10, price=549000, stock_quantity=14, sku='QKN-NAU-31'),
+                ProductVariant(product_id=7, color_id=8, size_id=11, price=549000, stock_quantity=12, sku='QKN-NAU-32'),
+                # Quần Jean Nữ Xanh Nhạt
+                ProductVariant(product_id=8, color_id=3, size_id=1, price=559000, stock_quantity=18, sku='QJN-XAN-XS'),
+                ProductVariant(product_id=8, color_id=3, size_id=2, price=559000, stock_quantity=16, sku='QJN-XAN-S'),
+                ProductVariant(product_id=8, color_id=3, size_id=3, price=559000, stock_quantity=14, sku='QJN-XAN-M'),
+                ProductVariant(product_id=8, color_id=3, size_id=4, price=559000, stock_quantity=12, sku='QJN-XAN-L'),
+                # Váy Đầm Suông Đen
+                ProductVariant(product_id=9, color_id=1, size_id=1, price=799000, stock_quantity=15, sku='VDS-DEN-XS'),
+                ProductVariant(product_id=9, color_id=1, size_id=2, price=799000, stock_quantity=12, sku='VDS-DEN-S'),
+                ProductVariant(product_id=9, color_id=1, size_id=3, price=799000, stock_quantity=10, sku='VDS-DEN-M'),
+                ProductVariant(product_id=9, color_id=1, size_id=4, price=799000, stock_quantity=8, sku='VDS-DEN-L')
+            ]
+            for variant in variants:
+                db.session.add(variant)
+            
+            # Thêm người dùng mẫu
+            users = [
+                User(username='admin', email='admin@fashionstore.com', password_hash=generate_password_hash('admin123'), full_name='Quản trị viên', phone='0123456789', address='Hà Nội', is_admin=True),
+                User(username='user1', email='user1@email.com', password_hash=generate_password_hash('password123'), full_name='Nguyễn Văn A', phone='0987654321', address='TP.HCM'),
+                User(username='user2', email='user2@email.com', password_hash=generate_password_hash('password123'), full_name='Trần Thị B', phone='0912345678', address='Đà Nẵng'),
+                User(username='user3', email='user3@email.com', password_hash=generate_password_hash('password123'), full_name='Lê Văn C', phone='0934567890', address='Hải Phòng'),
+                User(username='user4', email='user4@email.com', password_hash=generate_password_hash('password123'), full_name='Phạm Thị D', phone='0945678901', address='Cần Thơ')
+            ]
+            for user in users:
+                db.session.add(user)
+            
+            db.session.commit()
+            
+            # Thêm đơn hàng mẫu
+            orders = [
+                Order(user_id=2, total_amount=598000, status='completed', shipping_address='TP.HCM', phone='0987654321'),
+                Order(user_id=3, total_amount=1158000, status='processing', shipping_address='Đà Nẵng', phone='0912345678'),
+                Order(user_id=4, total_amount=799000, status='pending', shipping_address='Hải Phòng', phone='0934567890'),
+                Order(user_id=5, total_amount=1098000, status='completed', shipping_address='Cần Thơ', phone='0945678901')
+            ]
+            for order in orders:
+                db.session.add(order)
+            
+            db.session.commit()
+            
+            # Thêm chi tiết đơn hàng
+            order_details = [
+                OrderDetail(order_id=1, product_variant_id=1, quantity=2, unit_price=299000, total_price=598000),
+                OrderDetail(order_id=2, product_variant_id=13, quantity=1, unit_price=459000, total_price=459000),
+                OrderDetail(order_id=2, product_variant_id=17, quantity=1, unit_price=699000, total_price=699000),
+                OrderDetail(order_id=3, product_variant_id=33, quantity=1, unit_price=799000, total_price=799000),
+                OrderDetail(order_id=4, product_variant_id=6, quantity=1, unit_price=499000, total_price=499000),
+                OrderDetail(order_id=4, product_variant_id=21, quantity=1, unit_price=599000, total_price=599000)
+            ]
+            for detail in order_details:
+                db.session.add(detail)
+            
+            # Thêm đánh giá sản phẩm
+            reviews = [
+                ProductReview(product_id=1, user_id=2, rating=5, comment='Áo rất đẹp và chất lượng tốt'),
+                ProductReview(product_id=2, user_id=3, rating=4, comment='Áo sơ mi đẹp, phù hợp đi làm'),
+                ProductReview(product_id=3, user_id=4, rating=5, comment='Màu hồng rất xinh, chất liệu mềm mại'),
+                ProductReview(product_id=9, user_id=5, rating=4, comment='Váy đẹp nhưng hơi dài')
+            ]
+            for review in reviews:
+                db.session.add(review)
+            
+            # Thêm wishlist
+            wishlists = [
+                Wishlist(user_id=2, product_id=3),
+                Wishlist(user_id=2, product_id=5),
+                Wishlist(user_id=2, product_id=9),
+                Wishlist(user_id=3, product_id=1),
+                Wishlist(user_id=3, product_id=6),
+                Wishlist(user_id=4, product_id=2),
+                Wishlist(user_id=4, product_id=4),
+                Wishlist(user_id=4, product_id=8),
+                Wishlist(user_id=5, product_id=7),
+                Wishlist(user_id=5, product_id=9)
+            ]
+            for wishlist in wishlists:
+                db.session.add(wishlist)
+            
+            # Thêm bình luận sản phẩm
+            comments = [
+                ProductComment(product_id=1, user_id=2, comment='Áo này có màu nào khác không?', is_approved=True),
+                ProductComment(product_id=2, user_id=3, comment='Size M có vừa với người cao 1m7 không?', is_approved=True),
+                ProductComment(product_id=3, user_id=4, comment='Chất liệu có co giãn không?', is_approved=False),
+                ProductComment(product_id=9, user_id=5, comment='Váy này có thể giặt máy được không?', is_approved=True)
+            ]
+            for comment in comments:
+                db.session.add(comment)
+            
+            # Thêm tin nhắn liên hệ
+            messages = [
+                ContactMessage(name='Nguyễn Văn E', email='user5@email.com', subject='Hỏi về sản phẩm', message='Tôi muốn hỏi về chính sách đổi trả'),
+                ContactMessage(name='Trần Thị F', email='user6@email.com', subject='Khiếu nại', message='Sản phẩm tôi nhận không đúng màu'),
+                ContactMessage(name='Lê Văn G', email='user7@email.com', subject='Góp ý', message='Website rất đẹp và dễ sử dụng')
+            ]
+            for message in messages:
+                db.session.add(message)
+            
+            # Thêm đăng ký newsletter
+            newsletters = [
+                NewsletterSubscription(email='newsletter1@email.com'),
+                NewsletterSubscription(email='newsletter2@email.com'),
+                NewsletterSubscription(email='newsletter3@email.com'),
+                NewsletterSubscription(email='newsletter4@email.com'),
+                NewsletterSubscription(email='newsletter5@email.com')
+            ]
+            for newsletter in newsletters:
+                db.session.add(newsletter)
+            
+            db.session.commit()
+            print("Database initialized with sample data!")
+except Exception as e:
+    print(f"Database initialization error: {str(e)}")
+
+if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
