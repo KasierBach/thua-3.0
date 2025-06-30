@@ -75,7 +75,7 @@
                             Thời trang cao cấp 👑
                         </h1>
                         <p class="lead mb-4"
-                            style="color: #f8f9fa; text-shadow: 1px 1px 2px rgba(0,0,0,0.5); max-width: 500px;">
+                            style="color: #f8f9fa; text-shadow: 2px 2px 4px rgba(0,0,0,0.5); max-width: 500px;">
                             Các sản phẩm chất lượng cao từ các thương hiệu nổi tiếng thế giới
                         </p>
                         <a href="{{ url_for('products') }}" class="btn btn-outline-light btn-lg px-5 py-3">
@@ -165,23 +165,23 @@
             <div class="col-md-4 mb-4" data-aos="fade-up" data-aos-delay="{{ loop.index * 100 }}">
                 <div class="card category-card h-100 border-0 overflow-hidden">
                     <div class="position-relative">
-                        <img src="{{ url_for('static', filename=image_map[category.CategoryName]) }}"
-                            class="card-img-top" alt="{{ category.CategoryName }}"
+                        <img src="{{ url_for('static', filename=image_map[category.name]) }}"
+                            class="card-img-top" alt="{{ category.name }}"
                             style="height: 280px; object-fit: cover; transition: transform 0.5s ease;">
                         <div class="position-absolute top-0 start-0 w-100 h-100"
                             style="background: linear-gradient(45deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.1));">
                         </div>
                         <div class="position-absolute bottom-0 start-0 w-100 p-4"
                             style="background: linear-gradient(transparent, rgba(0,0,0,0.7));">
-                            <h5 class="text-white fw-bold mb-2">{{ category.CategoryName }}</h5>
+                            <h5 class="text-white fw-bold mb-2">{{ category.name }}</h5>
                         </div>
                     </div>
                     <div class="card-body text-center p-4">
                         <p class="card-text text-muted mb-4">
-                            {{ category.Description or 'Khám phá các sản phẩm ' + category.CategoryName + ' mới nhất của
+                            {{ category.description or 'Khám phá các sản phẩm ' + category.name + ' mới nhất của
                             chúng tôi' }}
                         </p>
-                        <a href="{{ url_for('products', category=category.CategoryID) }}" class="btn btn-primary">
+                        <a href="{{ url_for('products', category=category.id) }}" class="btn btn-primary">
                             <i class="fas fa-arrow-right me-2"></i>Xem sản phẩm
                         </a>
                     </div>
@@ -208,8 +208,8 @@
             <div class="col-lg-3 col-md-6 mb-4" data-aos="fade-up" data-aos-delay="{{ loop.index * 100 }}">
                 <div class="card product-card border-0">
                     <div class="position-relative overflow-hidden">
-                        <img src="{{ url_for('static', filename=product.ImageURL) }}" class="card-img-top product-img"
-                            alt="{{ product.ProductName }}">
+                        <img src="{{ url_for('static', filename=product.image_url) }}" class="card-img-top product-img"
+                            alt="{{ product.name }}">
                         <div class="position-absolute top-0 end-0 m-3">
                             <span class="badge bg-primary px-3 py-2">
                                 <i class="fas fa-star me-1"></i>Nổi bật
@@ -231,13 +231,13 @@
                         </div>
                     </div>
                     <div class="card-body">
-                        <h5 class="card-title fw-bold">{{ product.ProductName }}</h5>
+                        <h5 class="card-title fw-bold">{{ product.name }}</h5>
                         <p class="card-text text-muted mb-3">
-                            <i class="fas fa-tag me-1"></i>{{ product.CategoryName }}
+                            <i class="fas fa-tag me-1"></i>{{ product.category.name }}
                         </p>
                         <div class="d-flex justify-content-between align-items-center">
-                            <span class="h5 text-primary fw-bold mb-0">{{ "{:,.0f}".format(product.Price) }} đ</span>
-                            <a href="{{ url_for('product_detail', product_id=product.ProductID) }}"
+                            <span class="h5 text-primary fw-bold mb-0">{{ "{:,.0f}".format(product.base_price) }} đ</span>
+                            <a href="{{ url_for('product_detail', product_id=product.id) }}"
                                 class="btn btn-outline-primary btn-sm">
                                 <i class="fas fa-arrow-right me-1"></i>Chi tiết
                             </a>
@@ -271,8 +271,8 @@
             <div class="col-lg-3 col-md-6 mb-4" data-aos="fade-up" data-aos-delay="{{ loop.index * 100 }}">
                 <div class="card product-card border-0">
                     <div class="position-relative overflow-hidden">
-                        <img src="{{ url_for('static', filename=product.ImageURL) }}" class="card-img-top product-img"
-                            alt="{{ product.ProductName }}">
+                        <img src="{{ url_for('static', filename=product.image_url) }}" class="card-img-top product-img"
+                            alt="{{ product.name }}">
                         <div class="position-absolute top-0 start-0 m-3">
                             <span class="badge bg-danger px-3 py-2 animate-pulse">
                                 <i class="fas fa-fire me-1"></i>Hot
@@ -285,13 +285,13 @@
                         </div>
                     </div>
                     <div class="card-body">
-                        <h5 class="card-title fw-bold">{{ product.ProductName }}</h5>
+                        <h5 class="card-title fw-bold">{{ product.name }}</h5>
                         <p class="card-text text-muted mb-2">
-                            <i class="fas fa-tag me-1"></i>{{ product.CategoryName }}
+                            <i class="fas fa-tag me-1"></i>{{ product.category.name }}
                         </p>
                         <div class="mb-3">
                             <span class="badge bg-warning text-dark px-3 py-2">
-                                <i class="fas fa-shopping-cart me-1"></i>{{ "{:,.0f}".format(product.TotalSold) }} đã
+                                <i class="fas fa-shopping-cart me-1"></i>{{ "{:,.0f}".format(product.base_price) }} đã
                                 bán
                             </span>
                         </div>
@@ -302,7 +302,7 @@
                                 {% endfor %}
                                 <small class="text-muted ms-1">(4.8)</small>
                             </div>
-                            <a href="{{ url_for('product_detail', product_id=product.ProductID) }}"
+                            <a href="{{ url_for('product_detail', product_id=product.id) }}"
                                 class="btn btn-outline-primary btn-sm">
                                 <i class="fas fa-arrow-right me-1"></i>Chi tiết
                             </a>
