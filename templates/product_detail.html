@@ -755,13 +755,7 @@
                 } else {
                     container.innerHTML = `
             <div class="alert alert-danger border-0 shadow-sm">
-                <div class="d-flex align-items-center">
-                    <i class="fas fa-exclamation-triangle me-3 fa-2x"></i>
-                    <div>
-                        <h6 class="mb-1">Không thể tải đánh giá</h6>
-                        <p class="mb-0">${data.message || 'Đã xảy ra lỗi khi tải đánh giá'}</p>
-                    </div>
-                </div>
+                <i class="fas fa-exclamation-triangle me-2"></i>${data.message || 'Đã xảy ra lỗi khi tải đánh giá'}
             </div>
         `;
                 }
@@ -770,147 +764,141 @@
                 console.error('Error loading reviews:', error);
                 container.innerHTML = `
         <div class="alert alert-danger border-0 shadow-sm">
-            <div class="d-flex align-items-center">
-                <i class="fas fa-exclamation-triangle me-3 fa-2x"></i>
-                <div>
-                    <h6 class="mb-1">Lỗi kết nối</h6>
-                    <p class="mb-0">Không thể tải đánh giá. Vui lòng thử lại sau.</p>
-                </div>
-            </div>
+            <i class="fas fa-exclamation-triangle me-2"></i>Đã xảy ra lỗi khi tải đánh giá
         </div>
     `;
             });
-    }
+   }
 
-    // Load product comments
-    function loadProductComments() {
-        const container = document.getElementById('comments-container');
+   // Load product comments
+   function loadProductComments() {
+       const container = document.getElementById('comments-container');
 
-        // Clear existing content first
-        container.innerHTML = '<div class="text-center py-5" id="loading-comments"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div><p class="mt-3 text-muted">Đang tải bình luận...</p></div>';
+       // Clear existing content first
+       container.innerHTML = '<div class="text-center py-5" id="loading-comments"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div><p class="mt-3 text-muted">Đang tải bình luận...</p></div>';
 
-        fetch(`/api/get_product_comments?product_id=${productId}`)
-            .then(response => response.json())
-            .then(data => {
-                // Clear loading
-                container.innerHTML = '';
+       fetch(`/api/get_product_comments?product_id=${productId}`)
+           .then(response => response.json())
+           .then(data => {
+               // Clear loading
+               container.innerHTML = '';
 
-                if (data.success) {
-                    // Update comment count in tab
-                    document.getElementById('comment-count').textContent = data.comments.length || 0;
+               if (data.success) {
+                   // Update comment count in tab
+                   document.getElementById('comment-count').textContent = data.comments.length || 0;
 
-                    if (data.comments.length > 0) {
-                        let html = `<div class="comments-list">`;
+                   if (data.comments.length > 0) {
+                       let html = `<div class="comments-list">`;
 
-                        // Add individual comments
-                        data.comments.forEach((comment, index) => {
-                            html += `
-                    <div class="comment-item mb-4 p-4 bg-light rounded-3 shadow-sm">
-                        <div class="d-flex justify-content-between align-items-start mb-3">
-                            <div class="d-flex align-items-center">
-                                <div class="bg-success rounded-circle d-flex align-items-center justify-content-center me-3" 
-                                     style="width: 50px; height: 50px;">
-                                    <i class="fas fa-user text-white"></i>
-                                </div>
-                                <div>
-                                    <h6 class="mb-1 fw-bold">${comment.customer_name}</h6>
-                                    <small class="text-muted">
-                                        <i class="fas fa-clock me-1"></i>${comment.comment_date}
-                                    </small>
-                                </div>
-                            </div>
-                        </div>
-                        <p class="mb-0 text-dark">${comment.content}</p>
-                        ${comment.reply ? `
-                        <div class="admin-reply mt-3 p-3 bg-white rounded-2 border-start border-primary border-4">
-                            <div class="d-flex align-items-center mb-2">
-                                <div class="bg-primary rounded-circle d-flex align-items-center justify-content-center me-2" 
-                                     style="width: 30px; height: 30px;">
-                                    <i class="fas fa-store text-white" style="font-size: 12px;"></i>
-                                </div>
-                                <strong class="text-primary">Phản hồi từ cửa hàng</strong>
-                            </div>
-                            <p class="mb-0 text-dark">${comment.reply}</p>
-                        </div>` : ''}
-                    </div>
-                `;
-                        });
+                       // Add individual comments
+                       data.comments.forEach((comment, index) => {
+                           html += `
+                   <div class="comment-item mb-4 p-4 bg-light rounded-3 shadow-sm">
+                       <div class="d-flex justify-content-between align-items-start mb-3">
+                           <div class="d-flex align-items-center">
+                               <div class="bg-success rounded-circle d-flex align-items-center justify-content-center me-3" 
+                                    style="width: 50px; height: 50px;">
+                                   <i class="fas fa-user text-white"></i>
+                               </div>
+                               <div>
+                                   <h6 class="mb-1 fw-bold">${comment.customer_name}</h6>
+                                   <small class="text-muted">
+                                       <i class="fas fa-clock me-1"></i>${comment.comment_date}
+                                   </small>
+                               </div>
+                           </div>
+                       </div>
+                       <p class="mb-0 text-dark">${comment.content}</p>
+                       ${comment.reply ? `
+                       <div class="admin-reply mt-3 p-3 bg-white rounded-2 border-start border-primary border-4">
+                           <div class="d-flex align-items-center mb-2">
+                               <div class="bg-primary rounded-circle d-flex align-items-center justify-content-center me-2" 
+                                    style="width: 30px; height: 30px;">
+                                   <i class="fas fa-store text-white" style="font-size: 12px;"></i>
+                               </div>
+                               <strong class="text-primary">Phản hồi từ cửa hàng</strong>
+                           </div>
+                           <p class="mb-0 text-dark">${comment.reply}</p>
+                       </div>` : ''}
+                   </div>
+               `;
+                       });
 
-                        html += `</div>`;
-                        container.innerHTML = html;
-                    } else {
-                        container.innerHTML = `
-                <div class="text-center py-5">
-                    <div class="mb-4">
-                        <i class="far fa-comments fa-4x text-muted opacity-50"></i>
-                    </div>
-                    <h5 class="text-muted">Chưa có bình luận nào</h5>
-                    <p class="text-muted mb-4">Hãy là người đầu tiên bình luận về sản phẩm này</p>
-                    <button type="button" class="btn btn-gradient-primary" data-bs-toggle="modal" data-bs-target="#commentModal">
-                        <i class="fas fa-comment-dots me-2"></i>Viết bình luận đầu tiên
-                    </button>
-                </div>
-            `;
-                    }
-                } else {
-                    container.innerHTML = `
-            <div class="alert alert-danger border-0 shadow-sm">
-                <i class="fas fa-exclamation-triangle me-2"></i>${data.message || 'Đã xảy ra lỗi khi tải bình luận'}
-            </div>
-        `;
-                }
-            })
-            .catch(error => {
-                console.error('Error loading comments:', error);
-                container.innerHTML = `
-        <div class="alert alert-danger border-0 shadow-sm">
-            <i class="fas fa-exclamation-triangle me-2"></i>Đã xảy ra lỗi khi tải bình luận
-        </div>
-    `;
-            });
-    }
+                       html += `</div>`;
+                       container.innerHTML = html;
+                   } else {
+                       container.innerHTML = `
+               <div class="text-center py-5">
+                   <div class="mb-4">
+                       <i class="far fa-comments fa-4x text-muted opacity-50"></i>
+                   </div>
+                   <h5 class="text-muted">Chưa có bình luận nào</h5>
+                   <p class="text-muted mb-4">Hãy là người đầu tiên bình luận về sản phẩm này</p>
+                   <button type="button" class="btn btn-gradient-primary" data-bs-toggle="modal" data-bs-target="#commentModal">
+                       <i class="fas fa-comment-dots me-2"></i>Viết bình luận đầu tiên
+                   </button>
+               </div>
+           `;
+                   }
+               } else {
+                   container.innerHTML = `
+           <div class="alert alert-danger border-0 shadow-sm">
+               <i class="fas fa-exclamation-triangle me-2"></i>${data.message || 'Đã xảy ra lỗi khi tải bình luận'}
+           </div>
+       `;
+               }
+           })
+           .catch(error => {
+               console.error('Error loading comments:', error);
+               container.innerHTML = `
+       <div class="alert alert-danger border-0 shadow-sm">
+           <i class="fas fa-exclamation-triangle me-2"></i>Đã xảy ra lỗi khi tải bình luận
+       </div>
+   `;
+           });
+   }
 
-    // Submit comment - chỉ bind một lần
-    const submitCommentBtn = document.getElementById('submit-comment');
-    if (submitCommentBtn && !submitCommentBtn.hasAttribute('data-bound')) {
-        submitCommentBtn.setAttribute('data-bound', 'true');
-        submitCommentBtn.addEventListener('click', function () {
-            const content = document.getElementById('comment-content').value;
+   // Submit comment - chỉ bind một lần
+   const submitCommentBtn = document.getElementById('submit-comment');
+   if (submitCommentBtn && !submitCommentBtn.hasAttribute('data-bound')) {
+       submitCommentBtn.setAttribute('data-bound', 'true');
+       submitCommentBtn.addEventListener('click', function () {
+           const content = document.getElementById('comment-content').value;
 
-            if (!content.trim()) {
-                alert('Vui lòng nhập nội dung bình luận');
-                return;
-            }
+           if (!content.trim()) {
+               alert('Vui lòng nhập nội dung bình luận');
+               return;
+           }
 
-            const formData = new FormData();
-            formData.append('product_id', productId);
-            formData.append('content', content);
+           const formData = new FormData();
+           formData.append('product_id', productId);
+           formData.append('content', content);
 
-            fetch('{{ url_for("add_comment") }}', {
-                method: 'POST',
-                body: formData
-            })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        alert(data.message);
-                        $('#commentModal').modal('hide');
-                        document.getElementById('comment-content').value = ''; // Clear form
+           fetch('{{ url_for("add_comment") }}', {
+               method: 'POST',
+               body: formData
+           })
+               .then(response => response.json())
+               .then(data => {
+                   if (data.success) {
+                       alert(data.message);
+                       $('#commentModal').modal('hide');
+                       document.getElementById('comment-content').value = ''; // Clear form
 
-                        // Reload comments
-                        loadProductComments();
-                    } else {
-                        alert(data.message);
-                    }
-                })
-                .catch(error => {
-                    console.error('Error submitting comment:', error);
-                    alert('Đã xảy ra lỗi khi gửi bình luận');
-                });
-        });
-    }
+                       // Reload comments
+                       loadProductComments();
+                   } else {
+                       alert(data.message);
+                   }
+               })
+               .catch(error => {
+                   console.error('Error submitting comment:', error);
+                   alert('Đã xảy ra lỗi khi gửi bình luận');
+               });
+       });
+   }
 
-    // Generate dynamic product description
+   // Generate dynamic product description
 function generateProductDescription() {
         const productName = "{{ product.ProductName }}";
         const categoryName = "{{ product.CategoryName }}";
