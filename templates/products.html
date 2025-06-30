@@ -63,7 +63,7 @@
                     <i class="fas fa-dollar-sign me-2"></i>Giá
                 </div>
                 <div class="card-body">
-                    <form action="{{ url_for('products') }}" method="GET">
+                    <form id="filterForm" action="{{ url_for('products') }}" method="GET">
                         <div class="mb-3">
                             <label for="min_price" class="form-label">Giá tối thiểu:</label>
                             <input type="number" class="form-control" id="min_price" name="min_price"
@@ -151,7 +151,7 @@
                 <div class="col-lg-3 col-md-6 mb-3">
                     <div class="card product-card border-0">
                         <div class="position-relative overflow-hidden">
-                            <img src="{{ url_for('static', filename=product.ImageURL) }}" class="card-img-top product-img"
+                            <img src="{{ url_for('static', filename=product.ImageURL if product.ImageURL else image_map.get(product.ProductName, 'images/default.jpg')) }}" class="card-img-top product-img"
                                 alt="{{ product.ProductName }}">
                             <div class="position-absolute top-0 end-0 m-3">
                                 <span class="badge bg-primary px-3 py-2">
@@ -161,7 +161,7 @@
                             <div class="position-absolute bottom-0 start-0 end-0 p-3"
                                 style="background: linear-gradient(transparent, rgba(0,0,0,0.8)); opacity: 0; transition: opacity 0.3s ease;">
                                 <div class="d-flex gap-2">
-                                    <button class="btn btn-light btn-sm flex-fill">
+                                    <button class="btn btn-light btn-sm flex-fill" type="button" title="Thêm vào yêu thích">
                                         <i class="fas fa-heart"></i>
                                     </button>
                                     <button class="btn btn-light btn-sm flex-fill">
