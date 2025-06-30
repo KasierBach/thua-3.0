@@ -1402,8 +1402,6 @@ def admin_reply_comment():
         
     except Exception as e:
         conn.rollback()
-        return jsonify({'success': False, 'message': f'Đã xảy ra lỗi: {str(e)}' 
-        conn.rollback()
         return jsonify({'success': False, 'message': f'Đã xảy ra lỗi: {str(e)}'})
     finally:
         cursor.close()
