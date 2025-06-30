@@ -1,28 +1,27 @@
 FROM python:3.11-slim
 
-# Cài gói hệ thống cần thiết (KHÔNG có libssl1.1 vì đã bị loại bỏ)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gnupg2 \
-    curl \
-    apt-transport-https \
-    unixodbc \
-    unixodbc-dev \
-    libunwind8
+# Install system dependencies for psycopg2
+RUN apt-get update && apt-get install -y \
+    gcc \
+    python3-dev \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
 
-# Thêm repo của Microsoft để cài driver SQL Server
-RUN curl https://packages.microsoft.com/keys/microsoft.asc | apt-key add - && \
-    curl https://packages.microsoft.com/config/debian/10/prod.list > /etc/apt/sources.list.d/mssql-release.list && \
-    apt-get update && ACCEPT_EULA=Y apt-get install -y msodbcsql17
-
-# Tạo thư mục làm việc
+# Set working directory
 WORKDIR /app
 
-# Copy mã nguồn vào container
-COPY . /app
+# Copy requirements first for better caching
+COPY requirements.txt .
 
-# Cài thư viện Python
+# Install Python dependencies
 RUN pip install --upgrade pip
-RUN pip install -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Chạy ứng dụng Flask
-CMD ["python", "app.py"]
+# Copy application code
+COPY . .
+
+# Expose port
+EXPOSE 5000
+
+# Run the application
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "app:app"]

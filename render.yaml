@@ -17,8 +17,6 @@ services:
         sync: false
       - key: EMAIL_HOST_PASSWORD
         sync: false
-    buildpacks:
-      - heroku/python
 
 databases:
   - name: fashion-store-db
