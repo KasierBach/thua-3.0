@@ -15,19 +15,22 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
 app = Flask(__name__)
-app.secret_key = 'fashion_store_secret_key'
+app.secret_key = os.environ.get('SECRET_KEY', 'fashion_store_secret_key')
 
 # Cấu hình kết nối PostgreSQL
-# Sử dụng DATABASE_URL từ environment variable (Render sẽ cung cấp)
 database_url = os.environ.get('DATABASE_URL')
 if not database_url:
     # Cấu hình local development
     database_url = 'postgresql://username:password@localhost:5432/fashionstoredb'
 
+# Fix for Render's DATABASE_URL format
+if database_url.startswith('postgres://'):
+    database_url = database_url.replace('postgres://', 'postgresql://', 1)
+
 app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-# Cấu hình email (thay đổi theo thông tin của bạn)
+# Cấu hình email
 EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 587
 EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', 'your_email@gmail.com')
@@ -762,15 +765,16 @@ def change_password():
     cursor.execute('SELECT Password FROM Customers WHERE CustomerID = %s', (session['user_id'],))
     user = cursor.fetchone()
     
-    if not check_password_hash(user['password'], current_password):
+    if not user or not check_password_hash(user['password'], current_password):
         cursor.close()
         conn.close()
         flash('Mật khẩu hiện tại không đúng', 'error')
         return redirect(url_for('my_account', _anchor='password', password_error='Mật khẩu hiện tại không đúng'))
     
     # Cập nhật mật khẩu mới
+    hashed_password = generate_password_hash(new_password)
+    
     try:
-        hashed_password = generate_password_hash(new_password)
         cursor.execute('''
             UPDATE Customers
             SET Password = %s
@@ -788,197 +792,8 @@ def change_password():
     
     return redirect(url_for('my_account', _anchor='password', password_updated=True))
 
-# Chuyển đổi chế độ tối
-@app.route('/toggle_dark_mode', methods=['POST'])
-def toggle_dark_mode():
-    if 'user_id' not in session:
-        return jsonify({'success': False, 'message': 'Bạn cần đăng nhập để lưu tùy chọn'})
-    
-    dark_mode = request.form.get('dark_mode', type=int, default=0)
-    
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    try:
-        cursor.execute('''
-            UPDATE Customers
-            SET DarkModeEnabled = %s
-            WHERE CustomerID = %s
-        ''', (dark_mode, session['user_id']))
-        
-        conn.commit()
-        
-        # Cập nhật session
-        session['dark_mode'] = bool(dark_mode)
-        
-        return jsonify({'success': True})
-    except Exception as e:
-        conn.rollback()
-        return jsonify({'success': False, 'message': str(e)})
-    finally:
-        cursor.close()
-        conn.close()
-
-# Quên mật khẩu
-@app.route('/forgot_password', methods=['GET', 'POST'])
-def forgot_password():
-    if request.method == 'POST':
-        email = request.form.get('email')
-        
-        if not email:
-            flash('Vui lòng nhập email', 'error')
-            return redirect(url_for('forgot_password'))
-        
-        conn = get_db_connection()
-        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        
-        # Kiểm tra email có tồn tại không
-        cursor.execute('SELECT CustomerID, FullName FROM Customers WHERE Email = %s', (email,))
-        user = cursor.fetchone()
-        
-        if not user:
-            cursor.close()
-            conn.close()
-            # Không thông báo email không tồn tại để tránh lộ thông tin
-            return render_template('forgot_password.html', email_sent=email)
-        
-        # Tạo token đặt lại mật khẩu
-        token = str(uuid.uuid4())
-        expiry_date = datetime.now() + timedelta(hours=24)  # Token hết hạn sau 24 giờ
-        
-        # Lưu token vào cơ sở dữ liệu
-        try:
-            cursor.execute('''
-                INSERT INTO PasswordResetTokens (CustomerID, Token, ExpiryDate)
-                VALUES (%s, %s, %s)
-            ''', (user['customerid'], token, expiry_date))
-            
-            conn.commit()
-            
-            # Gửi email đặt lại mật khẩu
-            reset_link = url_for('reset_password', token=token, _external=True)
-            html_content = f'''
-                <html>
-                <head>
-                    <style>
-                        body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
-                        .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-                        .header {{ background-color: #ff6b6b; color: white; padding: 10px 20px; text-align: center; }}
-                        .content {{ padding: 20px; border: 1px solid #ddd; }}
-                        .button {{ display: inline-block; background-color: #ff6b6b; color: white; padding: 10px 20px; 
-                                  text-decoration: none; border-radius: 4px; margin-top: 20px; }}
-                        .footer {{ margin-top: 20px; font-size: 12px; color: #777; text-align: center; }}
-                    </style>
-                </head>
-                <body>
-                    <div class="container">
-                        <div class="header">
-                            <h2>Đặt lại mật khẩu</h2>
-                        </div>
-                        <div class="content">
-                            <p>Xin chào {user['fullname']},</p>
-                            <p>Chúng tôi nhận được yêu cầu đặt lại mật khẩu cho tài khoản của bạn tại Fashion Store.</p>
-                            <p>Vui lòng nhấp vào liên kết dưới đây để đặt lại mật khẩu của bạn:</p>
-                            <p><a href="{reset_link}" class="button">Đặt lại mật khẩu</a></p>
-                            <p>Hoặc sao chép và dán liên kết này vào trình duyệt của bạn: {reset_link}</p>
-                            <p>Liên kết này sẽ hết hạn sau 24 giờ.</p>
-                            <p>Nếu bạn không yêu cầu đặt lại mật khẩu, vui lòng bỏ qua email này.</p>
-                        </div>
-                        <div class="footer">
-                            <p>&copy; 2025 Fashion Store. All rights reserved.</p>
-                        </div>
-                    </div>
-                </body>
-                </html>
-            '''
-            
-            # Gửi email
-            send_email(email, 'Đặt lại mật khẩu - Fashion Store', html_content)
-            
-        except Exception as e:
-            conn.rollback()
-            print(f"Error: {str(e)}")
-        finally:
-            cursor.close()
-            conn.close()
-        
-        # Hiển thị thông báo đã gửi email
-        return render_template('forgot_password.html', email_sent=email)
-    
-    return render_template('forgot_password.html')
-
-# Đặt lại mật khẩu
-@app.route('/reset_password/<token>', methods=['GET', 'POST'])
-def reset_password(token):
-    # Kiểm tra token có hợp lệ không
-    conn = get_db_connection()
-    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    
-    cursor.execute('''
-        SELECT t.*, c.Email 
-        FROM PasswordResetTokens t
-        JOIN Customers c ON t.CustomerID = c.CustomerID
-        WHERE t.Token = %s AND t.ExpiryDate > NOW() AND t.IsUsed = false
-    ''', (token,))
-    
-    token_data = cursor.fetchone()
-    
-    if not token_data:
-        cursor.close()
-        conn.close()
-        return render_template('reset_password.html', token_invalid=True)
-    
-    if request.method == 'POST':
-        password = request.form.get('password')
-        confirm_password = request.form.get('confirm_password')
-        
-        if not password or not confirm_password:
-            flash('Vui lòng điền đầy đủ thông tin', 'error')
-            return redirect(url_for('reset_password', token=token))
-        
-        if password != confirm_password:
-            flash('Mật khẩu xác nhận không khớp với mật khẩu mới', 'error')
-            return redirect(url_for('reset_password', token=token))
-        
-        # Kiểm tra độ mạnh mật khẩu
-        if not re.match(r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$', password):
-            flash('Mật khẩu phải có ít nhất 8 ký tự, bao gồm chữ hoa, chữ thường và số', 'error')
-            return redirect(url_for('reset_password', token=token))
-        
-        try:
-            # Cập nhật mật khẩu mới
-            hashed_password = generate_password_hash(password)
-            cursor.execute('''
-                UPDATE Customers
-                SET Password = %s
-                WHERE CustomerID = %s
-            ''', (hashed_password, token_data['customerid']))
-            
-            # Đánh dấu token đã sử dụng
-            cursor.execute('''
-                UPDATE PasswordResetTokens
-                SET IsUsed = true
-                WHERE TokenID = %s
-            ''', (token_data['tokenid'],))
-            
-            conn.commit()
-            
-            return render_template('reset_password.html', reset_success=True)
-            
-        except Exception as e:
-            conn.rollback()
-            flash(f'Đã xảy ra lỗi: {str(e)}', 'error')
-            return redirect(url_for('reset_password', token=token))
-        finally:
-            cursor.close()
-            conn.close()
-    
-    cursor.close()
-    conn.close()
-    return render_template('reset_password.html', token=token)
-
-# Trang chi tiết đơn hàng
-@app.route('/order/<int:order_id>')
+# Chi tiết đơn hàng
+@app.route('/order_detail/<int:order_id>')
 def order_detail(order_id):
     if 'user_id' not in session:
         return redirect(url_for('login'))
@@ -993,10 +808,16 @@ def order_detail(order_id):
     
     order = cursor.fetchone()
     
+    if not order or order['customerid'] != session['user_id']:
+        cursor.close()
+        conn.close()
+        flash('Đơn hàng không tồn tại hoặc bạn không có quyền xem', 'error')
+        return redirect(url_for('my_account'))
+    
     # Lấy chi tiết đơn hàng
     cursor.execute('''
         SELECT od.OrderDetailID, p.ProductID, p.ProductName, c.ColorName, s.SizeName,
-               od.Quantity, od.Price, (od.Quantity * od.Price) AS Subtotal
+               od.Quantity, od.Price, (od.Quantity * od.Price) AS Subtotal, p.ImageURL
         FROM OrderDetails od
         JOIN ProductVariants pv ON od.VariantID = pv.VariantID
         JOIN Products p ON pv.ProductID = p.ProductID
@@ -1009,128 +830,247 @@ def order_detail(order_id):
     cursor.close()
     conn.close()
     
-    if not order or order['customerid'] != session['user_id']:
-        flash('Đơn hàng không tồn tại hoặc bạn không có quyền xem', 'error')
-        return redirect(url_for('my_account'))
-    
     return render_template('order_detail.html', order=order, order_details=order_details)
 
-# API lấy biến thể sản phẩm
-@app.route('/api/get_variant', methods=['POST'])
-def get_variant():
-    product_id = request.form.get('product_id', type=int)
-    color_id = request.form.get('color_id', type=int)
-    size_id = request.form.get('size_id', type=int)
-    
-    if not product_id or not color_id or not size_id:
-        return jsonify({'success': False, 'message': 'Dữ liệu không hợp lệ'})
-    
-    conn = get_db_connection()
-    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cursor.execute('''
-        SELECT VariantID, Quantity 
-        FROM ProductVariants 
-        WHERE ProductID = %s AND ColorID = %s AND SizeID = %s
-    ''', (product_id, color_id, size_id))
-    
-    variant = cursor.fetchone()
-    cursor.close()
-    conn.close()
-    
-    if not variant:
-        return jsonify({'success': False, 'message': 'Không tìm thấy biến thể sản phẩm'})
-    
-    return jsonify({
-        'success': True,
-        'variant_id': variant['variantid'],
-        'quantity': variant['quantity']
-    })
-
-# Trang quản trị - Dashboard
-@app.route('/admin')
-def admin_dashboard():
-    if 'user_id' not in session or session.get('is_admin') != True:
-        flash('Bạn không có quyền truy cập trang này', 'error')
-        return redirect(url_for('home'))
-    
-    conn = get_db_connection()
-    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    
-    # Lấy thống kê doanh thu theo tháng
-    cursor.execute('SELECT * FROM vw_MonthlyRevenue ORDER BY Year DESC, Month DESC')
-    monthly_revenue = cursor.fetchall()
-    
-    # Lấy thống kê doanh thu theo danh mục
-    cursor.execute('SELECT * FROM vw_CategoryRevenue ORDER BY TotalRevenue DESC')
-    category_revenue = cursor.fetchall()
-    
-    # Lấy sản phẩm bán chạy
-    cursor.execute('SELECT * FROM vw_BestSellingProducts')
-    best_selling = cursor.fetchall()
-    
-    cursor.close()
-    conn.close()
-    
-    return render_template('admin/dashboard.html', 
-                          monthly_revenue=monthly_revenue,
-                          category_revenue=category_revenue,
-                          best_selling=best_selling,
-                          now=datetime.now())
-
-# Kiểm tra quyền admin
-@app.before_request
-def check_admin():
-    if 'user_id' in session and session.get('is_admin') is None:
-        # Kiểm tra xem người dùng có phải là admin không
-        # Ví dụ: admin có CustomerID = 19
-        if session['user_id'] == 19:
-            session['is_admin'] = True
-
-# Wishlist functionality
-@app.route('/add_to_wishlist', methods=['POST'])
-def add_to_wishlist():
+# Hủy đơn hàng
+@app.route('/cancel_order/<int:order_id>', methods=['POST'])
+def cancel_order(order_id):
     if 'user_id' not in session:
-        return jsonify({'success': False, 'message': 'Vui lòng đăng nhập để sử dụng tính năng này'})
-    
-    # Support both JSON and form data
-    if request.is_json:
-        data = request.get_json()
-        product_id = data.get('product_id', None)
-    else:
-        product_id = request.form.get('product_id', type=int)
-    
-    try:
-        product_id = int(product_id)
-    except (TypeError, ValueError):
-        product_id = None
-
-    if not product_id:
-        return jsonify({'success': False, 'message': 'Dữ liệu không hợp lệ'})
+        return redirect(url_for('login'))
     
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     
+    # Kiểm tra quyền sở hữu đơn hàng và trạng thái
+    cursor.execute('''
+        SELECT CustomerID, Status
+        FROM Orders
+        WHERE OrderID = %s
+    ''', (order_id,))
+    
+    order = cursor.fetchone()
+    
+    if not order or order['customerid'] != session['user_id']:
+        cursor.close()
+        conn.close()
+        flash('Đơn hàng không tồn tại hoặc bạn không có quyền hủy', 'error')
+        return redirect(url_for('my_account'))
+    
+    if order['status'] not in ['Pending', 'Processing']:
+        cursor.close()
+        conn.close()
+        flash('Không thể hủy đơn hàng ở trạng thái này', 'error')
+        return redirect(url_for('order_detail', order_id=order_id))
+    
     try:
-        # Check if product exists in wishlist
+        # Gọi function cập nhật trạng thái đơn hàng
         cursor.execute('''
-            SELECT * FROM Wishlist 
-            WHERE CustomerID = %s AND ProductID = %s
-        ''', (session['user_id'], product_id))
-        
-        existing = cursor.fetchone()
-        
-        if existing:
-            return jsonify({'success': True, 'message': 'Sản phẩm đã có trong danh sách yêu thích'})
-        
-        # Add to wishlist
-        cursor.execute('''
-            INSERT INTO Wishlist (CustomerID, ProductID, AddedDate)
-            VALUES (%s, %s, NOW())
-        ''', (session['user_id'], product_id))
+            SELECT sp_UpdateOrderStatus(%s, %s)
+        ''', (order_id, 'Cancelled'))
         
         conn.commit()
-        return jsonify({'success': True, 'message': 'Đã thêm vào danh sách yêu thích'})
+        flash('Đã hủy đơn hàng thành công', 'success')
+    except Exception as e:
+        conn.rollback()
+        flash(f'Đã xảy ra lỗi: {str(e)}', 'error')
+    finally:
+        cursor.close()
+        conn.close()
+    
+    return redirect(url_for('order_detail', order_id=order_id))
+
+# Trang quên mật khẩu
+@app.route('/forgot_password', methods=['GET', 'POST'])
+def forgot_password():
+    if request.method == 'POST':
+        email = request.form.get('email')
         
+        if not email:
+            flash('Vui lòng nhập email', 'error')
+            return redirect(url_for('forgot_password'))
+        
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        
+        # Kiểm tra email có tồn tại không
+        cursor.execute('SELECT CustomerID, FullName FROM Customers WHERE Email = %s', (email,))
+        customer = cursor.fetchone()
+        
+        if not customer:
+            flash('Email không tồn tại trong hệ thống', 'error')
+            cursor.close()
+            conn.close()
+            return redirect(url_for('forgot_password'))
+        
+        # Tạo token reset password
+        token = str(uuid.uuid4())
+        expiry_date = datetime.now() + timedelta(hours=1)  # Token có hiệu lực trong 1 giờ
+        
+        try:
+            # Lưu token vào database
+            cursor.execute('''
+                INSERT INTO PasswordResetTokens (CustomerID, Token, ExpiryDate)
+                VALUES (%s, %s, %s)
+            ''', (customer['customerid'], token, expiry_date))
+            
+            conn.commit()
+            
+            # Gửi email reset password
+            reset_link = url_for('reset_password', token=token, _external=True)
+            html_content = f'''
+            <h2>Đặt lại mật khẩu</h2>
+            <p>Xin chào {customer['fullname']},</p>
+            <p>Bạn đã yêu cầu đặt lại mật khẩu. Vui lòng click vào link bên dưới để đặt lại mật khẩu:</p>
+            <p><a href="{reset_link}">Đặt lại mật khẩu</a></p>
+            <p>Link này sẽ hết hiệu lực sau 1 giờ.</p>
+            <p>Nếu bạn không yêu cầu đặt lại mật khẩu, vui lòng bỏ qua email này.</p>
+            '''
+            
+            if send_email(email, 'Đặt lại mật khẩu - Fashion Store', html_content):
+                flash('Đã gửi link đặt lại mật khẩu đến email của bạn', 'success')
+            else:
+                flash('Không thể gửi email. Vui lòng thử lại sau.', 'error')
+                
+        except Exception as e:
+            conn.rollback()
+            flash(f'Đã xảy ra lỗi: {str(e)}', 'error')
+        finally:
+            cursor.close()
+            conn.close()
+        
+        return redirect(url_for('login'))
+    
+    return render_template('forgot_password.html')
+
+# Trang đặt lại mật khẩu
+@app.route('/reset_password/<token>', methods=['GET', 'POST'])
+def reset_password(token):
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    
+    # Kiểm tra token có hợp lệ không
+    cursor.execute('''
+        SELECT prt.CustomerID, c.FullName, c.Email
+        FROM PasswordResetTokens prt
+        JOIN Customers c ON prt.CustomerID = c.CustomerID
+        WHERE prt.Token = %s AND prt.ExpiryDate > %s AND prt.IsUsed = FALSE
+    ''', (token, datetime.now()))
+    
+    token_data = cursor.fetchone()
+    
+    if not token_data:
+        cursor.close()
+        conn.close()
+        flash('Link đặt lại mật khẩu không hợp lệ hoặc đã hết hạn', 'error')
+        return redirect(url_for('forgot_password'))
+    
+    if request.method == 'POST':
+        new_password = request.form.get('new_password')
+        confirm_password = request.form.get('confirm_password')
+        
+        if not new_password or not confirm_password:
+            flash('Vui lòng điền đầy đủ thông tin', 'error')
+            return redirect(url_for('reset_password', token=token))
+        
+        if new_password != confirm_password:
+            flash('Mật khẩu xác nhận không khớp', 'error')
+            return redirect(url_for('reset_password', token=token))
+        
+        # Kiểm tra độ mạnh mật khẩu
+        if not re.match(r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$', new_password):
+            flash('Mật khẩu phải có ít nhất 8 ký tự, bao gồm chữ hoa, chữ thường và số', 'error')
+            return redirect(url_for('reset_password', token=token))
+        
+        # Cập nhật mật khẩu mới
+        hashed_password = generate_password_hash(new_password)
+        
+        try:
+            # Cập nhật mật khẩu
+            cursor.execute('''
+                UPDATE Customers
+                SET Password = %s
+                WHERE CustomerID = %s
+            ''', (hashed_password, token_data['customerid']))
+            
+            # Đánh dấu token đã được sử dụng
+            cursor.execute('''
+                UPDATE PasswordResetTokens
+                SET IsUsed = TRUE
+                WHERE Token = %s
+            ''', (token,))
+            
+            conn.commit()
+            flash('Đặt lại mật khẩu thành công! Vui lòng đăng nhập với mật khẩu mới.', 'success')
+            
+            cursor.close()
+            conn.close()
+            return redirect(url_for('login'))
+            
+        except Exception as e:
+            conn.rollback()
+            flash(f'Đã xảy ra lỗi: {str(e)}', 'error')
+    
+    cursor.close()
+    conn.close()
+    return render_template('reset_password.html', token=token, customer=token_data)
+
+# Trang liên hệ
+@app.route('/contact', methods=['GET', 'POST'])
+def contact():
+    if request.method == 'POST':
+        name = request.form.get('name')
+        email = request.form.get('email')
+        subject = request.form.get('subject')
+        message = request.form.get('message')
+        
+        if not name or not email or not message:
+            flash('Vui lòng điền đầy đủ thông tin bắt buộc', 'error')
+            return redirect(url_for('contact'))
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute('''
+                INSERT INTO ContactMessages (Name, Email, Subject, Message)
+                VALUES (%s, %s, %s, %s)
+            ''', (name, email, subject, message))
+            
+            conn.commit()
+            flash('Cảm ơn bạn đã liên hệ! Chúng tôi sẽ phản hồi sớm nhất có thể.', 'success')
+        except Exception as e:
+            conn.rollback()
+            flash(f'Đã xảy ra lỗi: {str(e)}', 'error')
+        finally:
+            cursor.close()
+            conn.close()
+        
+        return redirect(url_for('contact'))
+    
+    return render_template('contact.html')
+
+# Đăng ký nhận tin
+@app.route('/subscribe_newsletter', methods=['POST'])
+def subscribe_newsletter():
+    email = request.form.get('email')
+    
+    if not email:
+        return jsonify({'success': False, 'message': 'Vui lòng nhập email'})
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute('''
+            INSERT INTO NewsletterSubscribers (Email)
+            VALUES (%s)
+            ON CONFLICT (Email) DO UPDATE SET
+            IsActive = TRUE,
+            SubscribeDate = NOW()
+        ''', (email,))
+        
+        conn.commit()
+        return jsonify({'success': True, 'message': 'Đăng ký nhận tin thành công!'})
     except Exception as e:
         conn.rollback()
         return jsonify({'success': False, 'message': f'Đã xảy ra lỗi: {str(e)}'})
@@ -1138,77 +1078,451 @@ def add_to_wishlist():
         cursor.close()
         conn.close()
 
-@app.route('/wishlist')
-def view_wishlist():
+# Thêm/xóa sản phẩm yêu thích
+@app.route('/toggle_wishlist', methods=['POST'])
+def toggle_wishlist():
     if 'user_id' not in session:
-        return redirect(url_for('login', next=url_for('view_wishlist')))
+        return jsonify({'success': False, 'message': 'Vui lòng đăng nhập'})
+    
+    product_id = request.form.get('product_id', type=int)
+    
+    if not product_id:
+        return jsonify({'success': False, 'message': 'Dữ liệu không hợp lệ'})
     
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     
-    # Get wishlist items 
+    # Kiểm tra xem sản phẩm đã có trong wishlist chưa
     cursor.execute('''
-        SELECT
-          w.WishlistID,
-          p.ProductID,
-          p.ProductName,
-          p.Price,
-          c.CategoryName,
-          (SELECT ColorName
-             FROM Colors cl
-             JOIN ProductVariants pv ON cl.ColorID = pv.ColorID
-            WHERE pv.ProductID = p.ProductID
-            LIMIT 1
-          ) AS FirstColor,
-          p.ImageURL,                
-          w.AddedDate
+        SELECT WishlistID FROM Wishlist
+        WHERE CustomerID = %s AND ProductID = %s
+    ''', (session['user_id'], product_id))
+    
+    existing = cursor.fetchone()
+    
+    try:
+        if existing:
+            # Xóa khỏi wishlist
+            cursor.execute('''
+                DELETE FROM Wishlist
+                WHERE CustomerID = %s AND ProductID = %s
+            ''', (session['user_id'], product_id))
+            message = 'Đã xóa khỏi danh sách yêu thích'
+            is_in_wishlist = False
+        else:
+            # Thêm vào wishlist
+            cursor.execute('''
+                INSERT INTO Wishlist (CustomerID, ProductID)
+                VALUES (%s, %s)
+            ''', (session['user_id'], product_id))
+            message = 'Đã thêm vào danh sách yêu thích'
+            is_in_wishlist = True
+        
+        conn.commit()
+        return jsonify({
+            'success': True, 
+            'message': message,
+            'is_in_wishlist': is_in_wishlist
+        })
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'success': False, 'message': f'Đã xảy ra lỗi: {str(e)}'})
+    finally:
+        cursor.close()
+        conn.close()
+
+# Trang danh sách yêu thích
+@app.route('/wishlist')
+def wishlist():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    
+    cursor.execute('''
+        SELECT w.WishlistID, p.ProductID, p.ProductName, p.Price, p.ImageURL,
+               c.CategoryName, w.AddedDate
         FROM Wishlist w
-        JOIN Products p    ON w.ProductID = p.ProductID
-        JOIN Categories c  ON p.CategoryID = c.CategoryID
+        JOIN Products p ON w.ProductID = p.ProductID
+        JOIN Categories c ON p.CategoryID = c.CategoryID
         WHERE w.CustomerID = %s
         ORDER BY w.AddedDate DESC
     ''', (session['user_id'],))
     
     wishlist_items = cursor.fetchall()
     
-    # Get categories for navbar
+    cursor.close()
+    conn.close()
+    
+    return render_template('wishlist.html', wishlist_items=wishlist_items)
+
+# Thêm đánh giá sản phẩm
+@app.route('/add_review', methods=['POST'])
+def add_review():
+    if 'user_id' not in session:
+        return jsonify({'success': False, 'message': 'Vui lòng đăng nhập'})
+    
+    product_id = request.form.get('product_id', type=int)
+    rating = request.form.get('rating', type=int)
+    comment = request.form.get('comment', '')
+    
+    if not product_id or not rating or rating < 1 or rating > 5:
+        return jsonify({'success': False, 'message': 'Dữ liệu không hợp lệ'})
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute('''
+            INSERT INTO Reviews (CustomerID, ProductID, Rating, Comment)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (CustomerID, ProductID) DO UPDATE SET
+            Rating = EXCLUDED.Rating,
+            Comment = EXCLUDED.Comment,
+            ReviewDate = NOW()
+        ''', (session['user_id'], product_id, rating, comment))
+        
+        conn.commit()
+        return jsonify({'success': True, 'message': 'Đánh giá đã được gửi thành công!'})
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'success': False, 'message': f'Đã xảy ra lỗi: {str(e)}'})
+    finally:
+        cursor.close()
+        conn.close()
+
+# Thêm bình luận sản phẩm
+@app.route('/add_comment', methods=['POST'])
+def add_comment():
+    if 'user_id' not in session:
+        return jsonify({'success': False, 'message': 'Vui lòng đăng nhập'})
+    
+    product_id = request.form.get('product_id', type=int)
+    content = request.form.get('content', '').strip()
+    
+    if not product_id or not content:
+        return jsonify({'success': False, 'message': 'Vui lòng nhập nội dung bình luận'})
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute('''
+            INSERT INTO ProductComments (CustomerID, ProductID, Content)
+            VALUES (%s, %s, %s)
+        ''', (session['user_id'], product_id, content))
+        
+        conn.commit()
+        return jsonify({'success': True, 'message': 'Bình luận đã được gửi thành công!'})
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'success': False, 'message': f'Đã xảy ra lỗi: {str(e)}'})
+    finally:
+        cursor.close()
+        conn.close()
+
+# Lấy bình luận sản phẩm
+@app.route('/get_comments/<int:product_id>')
+def get_comments(product_id):
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    
+    cursor.execute('''
+        SELECT pc.CommentID, pc.Content, pc.CommentDate, pc.AdminReply, pc.ReplyDate,
+               c.FullName as CustomerName
+        FROM ProductComments pc
+        JOIN Customers c ON pc.CustomerID = c.CustomerID
+        WHERE pc.ProductID = %s AND pc.IsVisible = TRUE
+        ORDER BY pc.CommentDate DESC
+    ''', (product_id,))
+    
+    comments = cursor.fetchall()
+    
+    cursor.close()
+    conn.close()
+    
+    # Chuyển đổi datetime thành string để JSON serialize
+    for comment in comments:
+        comment['commentdate'] = comment['commentdate'].strftime('%d/%m/%Y %H:%M')
+        if comment['replydate']:
+            comment['replydate'] = comment['replydate'].strftime('%d/%m/%Y %H:%M')
+    
+    return jsonify(comments)
+
+# Lấy đánh giá sản phẩm
+@app.route('/get_reviews/<int:product_id>')
+def get_reviews(product_id):
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    
+    cursor.execute('''
+        SELECT r.ReviewID, r.Rating, r.Comment, r.ReviewDate,
+               c.FullName as CustomerName
+        FROM Reviews r
+        JOIN Customers c ON r.CustomerID = c.CustomerID
+        WHERE r.ProductID = %s
+        ORDER BY r.ReviewDate DESC
+    ''', (product_id,))
+    
+    reviews = cursor.fetchall()
+    
+    # Tính điểm trung bình
+    cursor.execute('''
+        SELECT AVG(Rating)::DECIMAL(3,2) as avg_rating, COUNT(*) as total_reviews
+        FROM Reviews
+        WHERE ProductID = %s
+    ''', (product_id,))
+    
+    stats = cursor.fetchone()
+    
+    cursor.close()
+    conn.close()
+    
+    # Chuyển đổi datetime thành string để JSON serialize
+    for review in reviews:
+        review['reviewdate'] = review['reviewdate'].strftime('%d/%m/%Y %H:%M')
+    
+    return jsonify({
+        'reviews': reviews,
+        'avg_rating': float(stats['avg_rating']) if stats['avg_rating'] else 0,
+        'total_reviews': stats['total_reviews']
+    })
+
+# Bật/tắt chế độ tối
+@app.route('/toggle_dark_mode', methods=['POST'])
+def toggle_dark_mode():
+    if 'user_id' not in session:
+        return jsonify({'success': False, 'message': 'Vui lòng đăng nhập'})
+    
+    # Đảo ngược trạng thái dark mode
+    current_mode = session.get('dark_mode', False)
+    new_mode = not current_mode
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute('''
+            UPDATE Customers
+            SET DarkModeEnabled = %s
+            WHERE CustomerID = %s
+        ''', (new_mode, session['user_id']))
+        
+        conn.commit()
+        
+        # Cập nhật session
+        session['dark_mode'] = new_mode
+        
+        return jsonify({
+            'success': True, 
+            'dark_mode': new_mode,
+            'message': f'Đã {"bật" if new_mode else "tắt"} chế độ tối'
+        })
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'success': False, 'message': f'Đã xảy ra lỗi: {str(e)}'})
+    finally:
+        cursor.close()
+        conn.close()
+
+# ===== ADMIN ROUTES =====
+
+# Kiểm tra quyền admin
+def admin_required(f):
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session:
+            flash('Vui lòng đăng nhập', 'error')
+            return redirect(url_for('login'))
+        
+        # Kiểm tra email admin (có thể thay đổi theo nhu cầu)
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cursor.execute('SELECT Email FROM Customers WHERE CustomerID = %s', (session['user_id'],))
+        user = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        
+        if not user or user['email'] != 'admin@fashionstore.com':
+            flash('Bạn không có quyền truy cập trang này', 'error')
+            return redirect(url_for('home'))
+        
+        session['is_admin'] = True
+        return f(*args, **kwargs)
+    
+    decorated_function.__name__ = f.__name__
+    return decorated_function
+
+# Trang quản trị chính
+@app.route('/admin')
+@admin_required
+def admin_dashboard():
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    
+    # Thống kê tổng quan
+    cursor.execute('SELECT COUNT(*) as total FROM Products')
+    total_products = cursor.fetchone()['total']
+    
+    cursor.execute('SELECT COUNT(*) as total FROM Orders')
+    total_orders = cursor.fetchone()['total']
+    
+    cursor.execute('SELECT COUNT(*) as total FROM Customers')
+    total_customers = cursor.fetchone()['total']
+    
+    cursor.execute('''
+        SELECT COALESCE(SUM(TotalAmount), 0) as total
+        FROM Orders
+        WHERE Status NOT IN ('Cancelled')
+    ''')
+    total_revenue = cursor.fetchone()['total']
+    
+    # Đơn hàng gần đây
+    cursor.execute('''
+        SELECT o.OrderID, c.FullName, o.OrderDate, o.TotalAmount, o.Status
+        FROM Orders o
+        JOIN Customers c ON o.CustomerID = c.CustomerID
+        ORDER BY o.OrderDate DESC
+        LIMIT 10
+    ''')
+    recent_orders = cursor.fetchall()
+    
+    # Sản phẩm bán chạy
+    cursor.execute('''
+        SELECT * FROM vw_BestSellingProducts
+        LIMIT 5
+    ''')
+    best_selling = cursor.fetchall()
+    
+    cursor.close()
+    conn.close()
+    
+    return render_template('admin/dashboard.html',
+                          total_products=total_products,
+                          total_orders=total_orders,
+                          total_customers=total_customers,
+                          total_revenue=total_revenue,
+                          recent_orders=recent_orders,
+                          best_selling=best_selling)
+
+# Quản lý sản phẩm
+@app.route('/admin/products')
+@admin_required
+def admin_products():
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    
+    cursor.execute('''
+        SELECT p.ProductID, p.ProductName, p.Price, c.CategoryName, p.CreatedAt,
+               COALESCE(SUM(pv.Quantity), 0) as TotalStock
+        FROM Products p
+        JOIN Categories c ON p.CategoryID = c.CategoryID
+        LEFT JOIN ProductVariants pv ON p.ProductID = pv.ProductID
+        GROUP BY p.ProductID, p.ProductName, p.Price, c.CategoryName, p.CreatedAt
+        ORDER BY p.CreatedAt DESC
+    ''')
+    products = cursor.fetchall()
+    
+    cursor.close()
+    conn.close()
+    
+    return render_template('admin/products.html', products=products)
+
+# Chỉnh sửa sản phẩm
+@app.route('/admin/edit_product/<int:product_id>', methods=['GET', 'POST'])
+@admin_required
+def admin_edit_product(product_id):
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    
+    if request.method == 'POST':
+        product_name = request.form.get('product_name')
+        description = request.form.get('description')
+        price = request.form.get('price', type=float)
+        category_id = request.form.get('category_id', type=int)
+        
+        try:
+            cursor.execute('''
+                UPDATE Products
+                SET ProductName = %s, Description = %s, Price = %s, CategoryID = %s
+                WHERE ProductID = %s
+            ''', (product_name, description, price, category_id, product_id))
+            
+            conn.commit()
+            flash('Cập nhật sản phẩm thành công!', 'success')
+            return redirect(url_for('admin_products'))
+        except Exception as e:
+            conn.rollback()
+            flash(f'Đã xảy ra lỗi: {str(e)}', 'error')
+    
+    # Lấy thông tin sản phẩm
+    cursor.execute('SELECT * FROM Products WHERE ProductID = %s', (product_id,))
+    product = cursor.fetchone()
+    
+    # Lấy danh sách danh mục
     cursor.execute('SELECT * FROM Categories')
     categories = cursor.fetchall()
     
     cursor.close()
     conn.close()
     
-    return render_template('wishlist.html', wishlist_items=wishlist_items, categories=categories)
+    if not product:
+        flash('Sản phẩm không tồn tại', 'error')
+        return redirect(url_for('admin_products'))
+    
+    return render_template('admin/edit_product.html', product=product, categories=categories)
 
-@app.route('/remove_from_wishlist', methods=['POST'])
-def remove_from_wishlist():
-    if 'user_id' not in session:
-        return jsonify({'success': False, 'message': 'Vui lòng đăng nhập để sử dụng tính năng này'})
-    
-    wishlist_id = request.form.get('wishlist_id', type=int)
-    
-    if not wishlist_id:
-        return jsonify({'success': False, 'message': 'Dữ liệu không hợp lệ'})
+# Quản lý đơn hàng
+@app.route('/admin/orders')
+@admin_required
+def admin_orders():
+    status_filter = request.args.get('status', '')
     
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     
+    query = '''
+        SELECT o.OrderID, c.FullName, c.Email, o.OrderDate, o.TotalAmount, o.Status, o.PaymentMethod
+        FROM Orders o
+        JOIN Customers c ON o.CustomerID = c.CustomerID
+    '''
+    params = []
+    
+    if status_filter:
+        query += ' WHERE o.Status = %s'
+        params.append(status_filter)
+    
+    query += ' ORDER BY o.OrderDate DESC'
+    
+    cursor.execute(query, params)
+    orders = cursor.fetchall()
+    
+    cursor.close()
+    conn.close()
+    
+    return render_template('admin/orders.html', orders=orders, status_filter=status_filter)
+
+# Cập nhật trạng thái đơn hàng
+@app.route('/admin/update_order_status', methods=['POST'])
+@admin_required
+def admin_update_order_status():
+    order_id = request.form.get('order_id', type=int)
+    new_status = request.form.get('status')
+    
+    if not order_id or not new_status:
+        return jsonify({'success': False, 'message': 'Dữ liệu không hợp lệ'})
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
     try:
-        # Verify ownership
+        # Gọi function cập nhật trạng thái đơn hàng
         cursor.execute('''
-            SELECT * FROM Wishlist 
-            WHERE WishlistID = %s AND CustomerID = %s
-        ''', (wishlist_id, session['user_id']))
-        
-        if not cursor.fetchone():
-            return jsonify({'success': False, 'message': 'Bạn không có quyền thực hiện thao tác này'})
-        
-        # Remove from wishlist
-        cursor.execute('DELETE FROM Wishlist WHERE WishlistID = %s', (wishlist_id,))
+            SELECT sp_UpdateOrderStatus(%s, %s)
+        ''', (order_id, new_status))
         
         conn.commit()
-        return jsonify({'success': True, 'message': 'Đã xóa khỏi danh sách yêu thích'})
-        
+        return jsonify({'success': True, 'message': 'Cập nhật trạng thái thành công'})
     except Exception as e:
         conn.rollback()
         return jsonify({'success': False, 'message': f'Đã xảy ra lỗi: {str(e)}'})
@@ -1216,64 +1530,75 @@ def remove_from_wishlist():
         cursor.close()
         conn.close()
 
-# Product reviews
-@app.route('/add_review', methods=['POST'])
-def add_review():
-    if 'user_id' not in session:
-        return jsonify({'success': False, 'message': 'Vui lòng đăng nhập để đánh giá sản phẩm'})
-    
-    product_id = request.form.get('product_id', type=int)
-    rating = request.form.get('rating', type=int)
-    comment = request.form.get('comment')
-    
-    if not product_id or not rating or rating < 1 or rating > 5:
-        return jsonify({'success': False, 'message': 'Dữ liệu không hợp lệ'})
-    
+# Báo cáo doanh thu
+@app.route('/admin/reports')
+@admin_required
+def admin_reports():
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     
+    # Doanh thu theo tháng
+    cursor.execute('SELECT * FROM vw_MonthlyRevenue LIMIT 12')
+    monthly_revenue = cursor.fetchall()
+    
+    # Doanh thu theo danh mục
+    cursor.execute('SELECT * FROM vw_CategoryRevenue')
+    category_revenue = cursor.fetchall()
+    
+    # Doanh thu 7 ngày gần đây
+    cursor.execute('''
+        SELECT * FROM sp_GetRevenueByDateRange(%s, %s)
+    ''', (datetime.now().date() - timedelta(days=6), datetime.now().date()))
+    daily_revenue = cursor.fetchall()
+    
+    cursor.close()
+    conn.close()
+    
+    return render_template('admin/reports.html',
+                          monthly_revenue=monthly_revenue,
+                          category_revenue=category_revenue,
+                          daily_revenue=daily_revenue)
+
+# Quản lý tin nhắn liên hệ
+@app.route('/admin/contact_messages')
+@admin_required
+def admin_contact_messages():
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    
+    cursor.execute('''
+        SELECT * FROM ContactMessages
+        ORDER BY SubmitDate DESC
+    ''')
+    messages = cursor.fetchall()
+    
+    cursor.close()
+    conn.close()
+    
+    return render_template('admin/contact_messages.html', messages=messages)
+
+# Cập nhật trạng thái tin nhắn liên hệ
+@app.route('/admin/update_message_status', methods=['POST'])
+@admin_required
+def admin_update_message_status():
+    message_id = request.form.get('message_id', type=int)
+    new_status = request.form.get('status')
+    
+    if not message_id or not new_status:
+        return jsonify({'success': False, 'message': 'Dữ liệu không hợp lệ'})
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
     try:
-        # Check if user has already reviewed this product
         cursor.execute('''
-            SELECT * FROM Reviews 
-            WHERE CustomerID = %s AND ProductID = %s
-        ''', (session['user_id'], product_id))
-        
-        existing = cursor.fetchone()
-        
-        if existing:
-            # Update existing review
-            cursor.execute('''
-                UPDATE Reviews
-                SET Rating = %s, Comment = %s, ReviewDate = NOW()
-                WHERE CustomerID = %s AND ProductID = %s
-            ''', (rating, comment, session['user_id'], product_id))
-            message = 'Đã cập nhật đánh giá của bạn'
-        else:
-            # Add new review
-            cursor.execute('''
-                INSERT INTO Reviews (CustomerID, ProductID, Rating, Comment, ReviewDate)
-                VALUES (%s, %s, %s, %s, NOW())
-            ''', (session['user_id'], product_id, rating, comment))
-            message = 'Cảm ơn bạn đã đánh giá sản phẩm'
+            UPDATE ContactMessages
+            SET Status = %s
+            WHERE MessageID = %s
+        ''', (new_status, message_id))
         
         conn.commit()
-        
-        # Get customer name for the response
-        cursor.execute('SELECT FullName FROM Customers WHERE CustomerID = %s', (session['user_id'],))
-        customer = cursor.fetchone()
-        
-        return jsonify({
-            'success': True, 
-            'message': message,
-            'review': {
-                'customer_name': customer['fullname'],
-                'rating': rating,
-                'comment': comment,
-                'date': datetime.now().strftime('%d/%m/%Y')
-            }
-        })
-        
+        return jsonify({'success': True, 'message': 'Cập nhật trạng thái thành công'})
     except Exception as e:
         conn.rollback()
         return jsonify({'success': False, 'message': f'Đã xảy ra lỗi: {str(e)}'})
@@ -1281,108 +1606,34 @@ def add_review():
         cursor.close()
         conn.close()
 
-# Thêm các route mới cho bình luận sản phẩm sau route add_review
-
-# Thêm bình luận sản phẩm
-@app.route('/add_comment', methods=['POST'])
-def add_comment():
-    if 'user_id' not in session:
-        return jsonify({'success': False, 'message': 'Vui lòng đăng nhập để bình luận sản phẩm'})
-    
-    product_id = request.form.get('product_id', type=int)
-    content = request.form.get('content')
-    
-    if not product_id or not content:
-        return jsonify({'success': False, 'message': 'Dữ liệu không hợp lệ'})
-    
+# Quản lý bình luận
+@app.route('/admin/comments')
+@admin_required
+def admin_comments():
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     
-    try:
-        # Add new comment
-        cursor.execute('''
-            INSERT INTO ProductComments (CustomerID, ProductID, Content, CommentDate, IsVisible)
-            VALUES (%s, %s, %s, NOW(), true)
-        ''', (session['user_id'], product_id, content))
-        
-        conn.commit()
-        
-        # Get customer name for the response
-        cursor.execute('SELECT FullName FROM Customers WHERE CustomerID = %s', (session['user_id'],))
-        customer = cursor.fetchone()
-        
-        return jsonify({
-            'success': True, 
-            'message': 'Cảm ơn bạn đã bình luận sản phẩm',
-            'comment': {
-                'customer_name': customer['fullname'],
-                'content': content,
-                'comment_date': datetime.now().strftime('%d/%m/%Y %H:%M')
-            }
-        })
-        
-    except Exception as e:
-        conn.rollback()
-        return jsonify({'success': False, 'message': f'Đã xảy ra lỗi: {str(e)}'})
-    finally:
-        cursor.close()
-        conn.close()
+    cursor.execute('''
+        SELECT pc.CommentID, pc.Content, pc.CommentDate, pc.AdminReply, pc.ReplyDate, pc.IsVisible,
+               c.FullName as CustomerName, p.ProductName
+        FROM ProductComments pc
+        JOIN Customers c ON pc.CustomerID = c.CustomerID
+        JOIN Products p ON pc.ProductID = p.ProductID
+        ORDER BY pc.CommentDate DESC
+    ''')
+    comments = cursor.fetchall()
+    
+    cursor.close()
+    conn.close()
+    
+    return render_template('admin/comments.html', comments=comments)
 
-# API lấy bình luận sản phẩm
-@app.route('/api/get_product_comments', methods=['GET'])
-def get_product_comments():
-    product_id = request.args.get('product_id', type=int)
-    
-    if not product_id:
-        return jsonify({'success': False, 'message': 'Product ID is required'})
-    
-    conn = get_db_connection()
-    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    
-    try:
-        # Get product comments
-        cursor.execute('''
-            SELECT pc.CommentID, pc.Content, pc.CommentDate, pc.AdminReply, pc.ReplyDate, 
-                   c.FullName AS CustomerName
-            FROM ProductComments pc
-            JOIN Customers c ON pc.CustomerID = c.CustomerID
-            WHERE pc.ProductID = %s AND pc.IsVisible = true
-            ORDER BY pc.CommentDate DESC
-        ''', (product_id,))
-        
-        comments_data = cursor.fetchall()
-        
-        # Format comments
-        comments = []
-        for comment in comments_data:
-            comments.append({
-                'comment_id': comment['commentid'],
-                'content': comment['content'],
-                'comment_date': comment['commentdate'].strftime('%d/%m/%Y %H:%M'),
-                'customer_name': comment['customername'],
-                'reply': comment['adminreply'],
-                'reply_date': comment['replydate'].strftime('%d/%m/%Y %H:%M') if comment['replydate'] else None
-            })
-        
-        return jsonify({
-            'success': True,
-            'comments': comments
-        })
-        
-    except Exception as e:
-        return jsonify({'success': False, 'message': str(e)})
-    finally:
-        cursor.close()
-        conn.close()
-
-# Admin route để trả lời bình luận
+# Trả lời bình luận
 @app.route('/admin/reply_comment', methods=['POST'])
+@admin_required
 def admin_reply_comment():
-    if 'user_id' not in session or session.get('is_admin') != True:
-        return jsonify({'success': False, 'message': 'Bạn không có quyền thực hiện thao tác này'})
-    
     comment_id = request.form.get('comment_id', type=int)
-    reply = request.form.get('reply')
+    reply = request.form.get('reply', '').strip()
     
     if not comment_id or not reply:
         return jsonify({'success': False, 'message': 'Dữ liệu không hợp lệ'})
@@ -1398,8 +1649,7 @@ def admin_reply_comment():
         ''', (reply, comment_id))
         
         conn.commit()
-        return jsonify({'success': True, 'message': 'Đã trả lời bình luận thành công'})
-        
+        return jsonify({'success': True, 'message': 'Trả lời bình luận thành công'})
     except Exception as e:
         conn.rollback()
         return jsonify({'success': False, 'message': f'Đã xảy ra lỗi: {str(e)}'})
@@ -1407,87 +1657,38 @@ def admin_reply_comment():
         cursor.close()
         conn.close()
 
-# Contact form
-@app.route('/contact', methods=['GET', 'POST'])
-def contact():
-    if request.method == 'POST':
-        name = request.form.get('name')
-        email = request.form.get('email')
-        subject = request.form.get('subject')
-        message = request.form.get('message')
-        
-        if not name or not email or not message:
-            flash('Vui lòng điền đầy đủ thông tin', 'error')
-            return redirect(url_for('contact'))
-        
-        # Validate email format
-        if not re.match(r"[^@]+@[^@]+\.[^@]+", email):
-            flash('Email không hợp lệ', 'error')
-            return redirect(url_for('contact'))
-        
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        try:
-            # Store contact message
-            cursor.execute('''
-                INSERT INTO ContactMessages (Name, Email, Subject, Message, SubmitDate, Status)
-                VALUES (%s, %s, %s, %s, NOW(), 'New')
-            ''', (name, email, subject, message))
-            
-            conn.commit()
-            flash('Cảm ơn bạn đã liên hệ với chúng tôi. Chúng tôi sẽ phản hồi sớm nhất có thể.', 'success')
-            return redirect(url_for('contact'))
-            
-        except Exception as e:
-            conn.rollback()
-            flash(f'Đã xảy ra lỗi: {str(e)}', 'error')
-            return redirect(url_for('contact'))
-        finally:
-            cursor.close()
-            conn.close()
+# Ẩn/hiện bình luận
+@app.route('/admin/toggle_comment_visibility', methods=['POST'])
+@admin_required
+def admin_toggle_comment_visibility():
+    comment_id = request.form.get('comment_id', type=int)
     
-    # Get categories for navbar
-    conn = get_db_connection()
-    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cursor.execute('SELECT * FROM Categories')
-    categories = cursor.fetchall()
-    cursor.close()
-    conn.close()
-    
-    return render_template('contact.html', categories=categories)
-
-# Newsletter subscription
-@app.route('/subscribe_newsletter', methods=['POST'])
-def subscribe_newsletter():
-    email = request.form.get('email')
-    
-    if not email:
-        return jsonify({'success': False, 'message': 'Vui lòng nhập email'})
-    
-    # Validate email format
-    if not re.match(r"[^@]+@[^@]+\.[^@]+", email):
-        return jsonify({'success': False, 'message': 'Email không hợp lệ'})
+    if not comment_id:
+        return jsonify({'success': False, 'message': 'Dữ liệu không hợp lệ'})
     
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     
     try:
-        # Check if email already exists
-        cursor.execute('SELECT * FROM NewsletterSubscribers WHERE Email = %s', (email,))
+        # Lấy trạng thái hiện tại
+        cursor.execute('SELECT IsVisible FROM ProductComments WHERE CommentID = %s', (comment_id,))
+        current = cursor.fetchone()
         
-        if cursor.fetchone():
-            return jsonify({'success': True, 'message': 'Email này đã đăng ký nhận bản tin'})
+        if not current:
+            return jsonify({'success': False, 'message': 'Bình luận không tồn tại'})
         
-        # Add new subscriber
+        new_visibility = not current['isvisible']
+        
         cursor.execute('''
-            INSERT INTO NewsletterSubscribers (Email, SubscribeDate, IsActive)
-            VALUES (%s, NOW(), true)
-        ''', (email,))
+            UPDATE ProductComments
+            SET IsVisible = %s
+            WHERE CommentID = %s
+        ''', (new_visibility, comment_id))
         
         conn.commit()
-        return jsonify({'success': True, 'message': 'Đăng ký nhận bản tin thành công!'})
         
+        action = 'hiện' if new_visibility else 'ẩn'
+        return jsonify({'success': True, 'message': f'Đã {action} bình luận'})
     except Exception as e:
         conn.rollback()
         return jsonify({'success': False, 'message': f'Đã xảy ra lỗi: {str(e)}'})
@@ -1495,233 +1696,31 @@ def subscribe_newsletter():
         cursor.close()
         conn.close()
 
-# Recently viewed products
-@app.route('/api/track_product_view', methods=['POST'])
-def track_product_view():
-    product_id = request.form.get('product_id', type=int)
+# Context processor để truyền thông tin user và giỏ hàng cho tất cả template
+@app.context_processor
+def inject_user_and_cart():
+    cart_count = 0
+    if 'cart' in session:
+        cart_count = sum(item['quantity'] for item in session['cart'])
     
-    if not product_id:
-        return jsonify({'success': False})
-    
-    # Store in session
-    if 'recently_viewed' not in session:
-        session['recently_viewed'] = []
-    
-    # Remove if already in list
-    if product_id in session['recently_viewed']:
-        session['recently_viewed'].remove(product_id)
-    
-    # Add to beginning of list
-    session['recently_viewed'].insert(0, product_id)
-    
-    # Keep only the last 5 items
-    session['recently_viewed'] = session['recently_viewed'][:5]
-    
-    # Save session
-    session.modified = True
-    
-    return jsonify({'success': True})
+    return {
+        'user_id': session.get('user_id'),
+        'user_name': session.get('user_name'),
+        'dark_mode': session.get('dark_mode', False),
+        'is_admin': session.get('is_admin', False),
+        'cart_count': cart_count
+    }
 
-@app.route('/api/get_recently_viewed')
-def get_recently_viewed():
-    if 'recently_viewed' not in session or not session['recently_viewed']:
-        return jsonify({'success': True, 'products': []})
-    
-    product_ids = session['recently_viewed']
-    
-    conn = get_db_connection()
-    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    
-    # Convert list to tuple for SQL IN clause
-    product_ids_tuple = tuple(product_ids)
-    
-    # Get products
-    cursor.execute(f'''
-        SELECT p.ProductID, p.ProductName, p.Price, c.CategoryName
-        FROM Products p
-        JOIN Categories c ON p.CategoryID = c.CategoryID
-        WHERE p.ProductID IN %s
-    ''', (product_ids_tuple,))
-    
-    products = cursor.fetchall()
-    cursor.close()
-    conn.close()
-    
-    # Convert to list of dicts and maintain original order
-    result = []
-    for product_id in product_ids:
-        for product in products:
-            if product['productid'] == product_id:
-                result.append({
-                    'product_id': product['productid'],
-                    'product_name': product['productname'],
-                    'price': float(product['price']),
-                    'category_name': product['categoryname']
-                })
-                break
-    
-    return jsonify({'success': True, 'products': result})
+# Xử lý lỗi 404
+@app.errorhandler(404)
+def not_found_error(error):
+    return render_template('404.html'), 404
 
-# API lấy đánh giá sản phẩm
-@app.route('/api/get_product_reviews', methods=['GET'])
-def get_product_reviews():
-    product_id = request.args.get('product_id', type=int)
-    
-    if not product_id:
-        return jsonify({'success': False, 'message': 'Product ID is required'})
-    
-    conn = get_db_connection()
-    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    
-    try:
-        # Get product reviews
-        cursor.execute('''
-            SELECT r.ReviewID, r.Rating, r.Comment, r.ReviewDate, c.FullName AS CustomerName
-            FROM Reviews r
-            JOIN Customers c ON r.CustomerID = c.CustomerID
-            WHERE r.ProductID = %s
-            ORDER BY r.ReviewDate DESC
-        ''', (product_id,))
-        
-        reviews_data = cursor.fetchall()
-        
-        # Calculate average rating
-        cursor.execute('''
-            SELECT AVG(Rating::float) AS AverageRating, COUNT(*) AS TotalReviews
-            FROM Reviews
-            WHERE ProductID = %s
-        ''', (product_id,))
-        
-        avg_data = cursor.fetchone()
-        average_rating = avg_data['averagerating'] if avg_data and avg_data['averagerating'] else 0
-        total_reviews = avg_data['totalreviews'] if avg_data else 0
-        
-        # Get rating breakdown
-        cursor.execute('''
-            SELECT Rating, COUNT(*) as Count
-            FROM Reviews
-            WHERE ProductID = %s
-            GROUP BY Rating
-            ORDER BY Rating DESC
-        ''', (product_id,))
-        
-        rating_breakdown_data = cursor.fetchall()
-        rating_breakdown = {i: 0 for i in range(1, 6)}
-        for row in rating_breakdown_data:
-            rating_breakdown[row['rating']] = row['count']
-        
-        # Format reviews
-        reviews = []
-        for review in reviews_data:
-            reviews.append({
-                'review_id': review['reviewid'],
-                'rating': review['rating'],
-                'comment': review['comment'],
-                'review_date': review['reviewdate'].strftime('%d/%m/%Y'),
-                'customer_name': review['customername']
-            })
-        
-        return jsonify({
-            'success': True,
-            'reviews': reviews,
-            'average_rating': float(average_rating),
-            'total_reviews': int(total_reviews),
-            'rating_breakdown': rating_breakdown
-        })
-        
-    except Exception as e:
-        return jsonify({'success': False, 'message': str(e)})
-    finally:
-        cursor.close()
-        conn.close()
-
-# Hủy đơn hàng
-@app.route('/cancel_order/<int:order_id>', methods=['POST'])
-def cancel_order(order_id):
-    if 'user_id' not in session:
-        return jsonify({'success': False, 'message': 'Vui lòng đăng nhập để hủy đơn hàng'})
-    
-    conn = get_db_connection()
-    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    
-    try:
-        # Kiểm tra đơn hàng có tồn tại và thuộc về người dùng
-        cursor.execute('''
-            SELECT Status, CustomerID FROM Orders 
-            WHERE OrderID = %s
-        ''', (order_id,))
-        order = cursor.fetchone()
-        
-        if not order:
-            return jsonify({'success': False, 'message': 'Đơn hàng không tồn tại'})
-        
-        if order['customerid'] != session['user_id']:
-            return jsonify({'success': False, 'message': 'Bạn không có quyền hủy đơn hàng này'})
-        
-        if order['status'] != 'Pending':
-            return jsonify({'success': False, 'message': 'Chỉ có thể hủy đơn hàng ở trạng thái Đang xử lý'})
-        
-        # Cập nhật trạng thái đơn hàng thành 'Cancelled'
-        cursor.execute('''
-            SELECT sp_UpdateOrderStatus(%s, %s)
-        ''', (order_id, 'Cancelled'))
-        
-        # Gửi email thông báo hủy đơn hàng
-        cursor.execute('SELECT Email, FullName FROM Customers WHERE CustomerID = %s', (session['user_id'],))
-        customer = cursor.fetchone()
-        
-        if customer:
-            html_content = f'''
-                <html>
-                <head>
-                    <style>
-                        body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
-                        .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-                        .header {{ background-color: #ff6b6b; color: white; padding: 10px 20px; text-align: center; }}
-                        .content {{ padding: 20px; border: 1px solid #ddd; }}
-                        .footer {{ margin-top: 20px; font-size: 12px; color: #777; text-align: center; }}
-                    </style>
-                </head>
-                <body>
-                    <div class="container">
-                        <div class="header">
-                            <h2>Thông báo hủy đơn hàng</h2>
-                        </div>
-                        <div class="content">
-                            <p>Xin chào {customer['fullname']},</p>
-                            <p>Đơn hàng #{order_id} của bạn đã được hủy theo yêu cầu.</p>
-                            <p>Nếu bạn có bất kỳ câu hỏi nào, vui lòng liên hệ với chúng tôi.</p>
-                        </div>
-                        <div class="footer">
-                            <p>© 2025 Fashion Store. All rights reserved.</p>
-                        </div>
-                    </div>
-                </body>
-                </html>
-            '''
-            send_email(customer['email'], 'Hủy đơn hàng - Fashion Store', html_content)
-        
-        conn.commit()
-        return jsonify({'success': True, 'message': 'Đã hủy đơn hàng thành công'})
-        
-    except Exception as e:
-        conn.rollback()
-        return jsonify({'success': False, 'message': f'Đã xảy ra lỗi: {str(e)}'})
-    finally:
-        cursor.close()
-        conn.close()
-
-@app.route('/gallery')
-def gallery():
-    # Lấy danh sách file trong thư mục static/images
-    image_dir = os.path.join(app.static_folder, 'images')
-    images = [
-        f for f in os.listdir(image_dir)
-        if os.path.isfile(os.path.join(image_dir, f))
-        and f.lower().endswith(('.png', '.jpg', '.jpeg', '.gif'))
-    ]
-    # Mảng images sẽ chứa ['mu-bucket.jpg', 'quan-kaki-nam-nau.jpg', …]
-    return render_template('gallery.html', images=images)
+# Xử lý lỗi 500
+@app.errorhandler(500)
+def internal_error(error):
+    return render_template('500.html'), 500
 
 if __name__ == '__main__':
-    app.run(debug=True, port=4000, host='0.0.0.0')
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=False)
